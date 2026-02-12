@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  client1:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: client1
+    environment:
+      - SERVER_HOST=host.docker.internal
+      - SERVER_PORT=8765
+    networks:
+      - websocket-network
+    stdin_open: true
+    tty: true
+
+  client2:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: client2
+    environment:
+      - SERVER_HOST=host.docker.internal
+      - SERVER_PORT=8765
+    networks:
+      - websocket-network
+    stdin_open: true
+    tty: true
+
+  client3:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: client3
+    environment:
+      - SERVER_HOST=host.docker.internal
+      - SERVER_PORT=8765
+    networks:
+      - websocket-network
+    stdin_open: true
+    tty: true
+
+networks:
+  websocket-network:
+    driver: bridge
