@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: websocket-server
+    ports:
+      - "8765:8765"
+    networks:
+      - websocket-network
+    restart: unless-stopped
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: websocket-client
+    stdin_open: true
+    tty: true
+    depends_on:
+      - server
+    networks:
+      - websocket-network
+    environment:
+      - SERVER_URL=ws://server:8765
+    command: python client_simple.py ws://server:8765
+
+networks:
+  websocket-network:
+    driver: bridge

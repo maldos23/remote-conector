@@ -1,0 +1,14 @@
+# Dockerfile for WebSocket Client
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy client file
+COPY client_simple.py .
+
+# Run client
+CMD ["python", "client_simple.py"]
