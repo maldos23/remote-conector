@@ -9,6 +9,7 @@ import json
 import subprocess
 import websockets
 import sys
+import os
 
 
 def get_server_url() -> str:
@@ -17,11 +18,22 @@ def get_server_url() -> str:
     print("🔌 WebSocket Command Executor Client")
     print("="*60)
     
+    # Priority 1: Command line argument
     if len(sys.argv) > 1:
         url = sys.argv[1]
         print(f"📡 Using URL from argument: {url}")
         return url
     
+    # Priority 2: Environment variables
+    server_host = os.getenv('SERVER_HOST')
+    server_port = os.getenv('SERVER_PORT', '8765')
+    
+    if server_host:
+        url = f"ws://{server_host}:{server_port}"
+        print(f"📡 Using URL from environment: {url}")
+        return url
+    
+    # Priority 3: Ask user
     url = input("🌐 Enter WebSocket server URL (e.g., ws://localhost:8765): ").strip()
     
     if not url:

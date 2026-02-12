@@ -10,5 +10,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy client file
 COPY client_simple.py .
 
+# Environment variables for server connection
+ENV SERVER_HOST=host.docker.internal
+ENV SERVER_PORT=8765
+
 # Run client
 CMD ["python", "client_simple.py"]
