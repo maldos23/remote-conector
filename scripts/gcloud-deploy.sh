@@ -173,7 +173,7 @@ generate_and_upload_certs() {
   success "Secrets uploaded to Secret Manager"
 }
 
-# Bootstrap script that runs on each VM after creation
+# Bootstrap script that runs on each VM after creation (runs as root via sudo)
 _vm_bootstrap_docker() {
   cat << 'BOOTSTRAP'
 #!/bin/bash
@@ -193,13 +193,13 @@ apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plug
 systemctl enable docker
 systemctl start docker
 
-# Install gcloud (for Secret Manager access)
+# Install gcloud SDK (for Secret Manager access)
 echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
   > /etc/apt/sources.list.d/google-cloud-sdk.list
 curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
   | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
 apt-get update -qq
-apt-get install -y -qq google-cloud-cli
+apt-get install -y -qq google-cloud-cli python3-dev
 
 echo "Bootstrap complete"
 BOOTSTRAP
@@ -222,12 +222,11 @@ create_server_vm() {
   wait_for_vm "$SERVER_VM"
   local server_ip; server_ip=$(get_external_ip "$SERVER_VM")
 
-  # Run bootstrap
-  gcloud compute ssh "$SERVER_VM" --zone="$ZONE" --project="$PROJECT_ID" \
-    --command="$(_vm_bootstrap_docker)" --quiet
+  # Run bootstrap as root
+  _vm_bootstrap_docker | gcloud compute ssh "$SERVER_VM" --zone="$ZONE" --project="$PROJECT_ID" --quiet -- sudo bash
 
   # Run server container
-  gcloud compute ssh "$SERVER_VM" --zone="$ZONE" --project="$PROJECT_ID" --quiet -- bash <<REMOTE
+  gcloud compute ssh "$SERVER_VM" --zone="$ZONE" --project="$PROJECT_ID" --quiet -- sudo bash <<REMOTE
 set -e
 
 # Download secrets from Secret Manager
@@ -300,11 +299,11 @@ payload = {'sub': '$client_id', 'type': 'client',
 print(jwt.encode(payload, '$JWT_SECRET', algorithm='HS256'))
 " 2>/dev/null || echo "GENERATE_TOKEN_MANUALLY")
 
-  gcloud compute ssh "$vm_name" --zone="$ZONE" --project="$PROJECT_ID" --quiet -- bash <<REMOTE
-set -e
+  # Bootstrap Docker as root
+  _vm_bootstrap_docker | gcloud compute ssh "$vm_name" --zone="$ZONE" --project="$PROJECT_ID" --quiet -- sudo bash
 
-# Bootstrap Docker
-$(_vm_bootstrap_docker)
+  gcloud compute ssh "$vm_name" --zone="$ZONE" --project="$PROJECT_ID" --quiet -- sudo bash <<REMOTE
+set -e
 
 # Download server CA cert (public — not the private key)
 mkdir -p /app/certs
