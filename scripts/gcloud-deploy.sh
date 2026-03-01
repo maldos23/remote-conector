@@ -109,7 +109,6 @@ enable_apis() {
   info "Enabling GCP APIs..."
   gcloud services enable \
     compute.googleapis.com \
-    secretmanager.googleapis.com \
     --project="$PROJECT_ID" --quiet
   success "APIs enabled"
 }
@@ -144,7 +143,7 @@ create_firewall_rules() {
   success "Firewall rules ready"
 }
 
-generate_and_upload_certs() {
+generate_certs() {
   info "Generating TLS certificates..."
   mkdir -p "$CERT_DIR"
 
@@ -153,54 +152,22 @@ generate_and_upload_certs() {
       -keyout "$KEY" -out "$CERT" \
       -subj "/CN=matcha-cloud/O=matcha-cloud/C=US" \
       -addext "subjectAltName=IP:0.0.0.0" 2>/dev/null
-    success "Certificates generated"
+    success "Certificates generated: $CERT_DIR/"
   else
-    warn "Certs already exist — reusing. Pass --force-certs to regenerate."
+    warn "Certs already exist — reusing (delete $CERT_DIR/*.{crt,key} to regenerate)"
   fi
-
-  info "Uploading certificates to GCP Secret Manager..."
-
-  # Delete and recreate to allow update
-  for secret_name in matcha-tls-cert matcha-tls-key matcha-jwt-secret; do
-    gcloud secrets delete "$secret_name" --project="$PROJECT_ID" --quiet 2>/dev/null || true
-  done
-
-  gcloud secrets create matcha-tls-cert --project="$PROJECT_ID" --data-file="$CERT" --quiet
-  gcloud secrets create matcha-tls-key  --project="$PROJECT_ID" --data-file="$KEY"  --quiet
-  printf '%s' "$JWT_SECRET" | gcloud secrets create matcha-jwt-secret \
-    --project="$PROJECT_ID" --data-file="-" --quiet
-
-  success "Secrets uploaded to Secret Manager"
 }
 
-# Bootstrap script that runs on each VM after creation (runs as root via sudo)
+# Bootstrap script — installs Docker only (fast, ~2 min, no gcloud SDK needed)
 _vm_bootstrap_docker() {
   cat << 'BOOTSTRAP'
 #!/bin/bash
 set -e
 export DEBIAN_FRONTEND=noninteractive
-
-# Install Docker
 apt-get update -qq
-apt-get install -y -qq ca-certificates curl gnupg lsb-release git openssl
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-chmod a+r /etc/apt/keyrings/docker.asc
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(lsb_release -cs) stable" \
-  > /etc/apt/sources.list.d/docker.list
-apt-get update -qq
-apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
-systemctl enable docker
-systemctl start docker
-
-# Install gcloud SDK (for Secret Manager access)
-echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
-  > /etc/apt/sources.list.d/google-cloud-sdk.list
-curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
-  | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
-apt-get update -qq
-apt-get install -y -qq google-cloud-cli python3-dev
-
+apt-get install -y -qq curl git openssl
+# Docker convenience script — handles systemd start/enable automatically
+curl -fsSL https://get.docker.com | sh
 echo "Bootstrap complete"
 BOOTSTRAP
 }
@@ -222,19 +189,24 @@ create_server_vm() {
   wait_for_vm "$SERVER_VM"
   local server_ip; server_ip=$(get_external_ip "$SERVER_VM")
 
-  # Run bootstrap as root
+  # Bootstrap Docker as root
+  info "Installing Docker on $SERVER_VM..."
   _vm_bootstrap_docker | gcloud compute ssh "$SERVER_VM" --zone="$ZONE" --project="$PROJECT_ID" --quiet -- sudo bash
 
-  # Run server container
-  gcloud compute ssh "$SERVER_VM" --zone="$ZONE" --project="$PROJECT_ID" --quiet -- sudo bash <<REMOTE
+  # Upload TLS certs via SCP (avoids heredoc-inside-heredoc complexity)
+  info "Uploading TLS certificates to $SERVER_VM..."
+  gcloud compute scp "$CERT" "$SERVER_VM":/tmp/server.crt --zone="$ZONE" --project="$PROJECT_ID" --quiet
+  gcloud compute scp "$KEY"  "$SERVER_VM":/tmp/server.key  --zone="$ZONE" --project="$PROJECT_ID" --quiet
+
+  # Build and run server container — JWT_SECRET injected directly (no gcloud needed on VM)
+  gcloud compute ssh "$SERVER_VM" --zone="$ZONE" --project="$PROJECT_ID" --quiet -- sudo bash << REMOTE
 set -e
 
-# Download secrets from Secret Manager
+# Move certs to secrets dir
 mkdir -p /run/secrets
-gcloud secrets versions access latest --secret=matcha-tls-cert --project=${PROJECT_ID} > /run/secrets/server.crt
-gcloud secrets versions access latest --secret=matcha-tls-key  --project=${PROJECT_ID} > /run/secrets/server.key
+mv /tmp/server.crt /run/secrets/server.crt
+mv /tmp/server.key /run/secrets/server.key
 chmod 600 /run/secrets/server.key
-JWT=\$(gcloud secrets versions access latest --secret=matcha-jwt-secret --project=${PROJECT_ID})
 
 # Clone repo
 git clone --branch ${GIT_BRANCH} ${GIT_REPO} /opt/matcha-cloud 2>/dev/null || \
@@ -244,10 +216,8 @@ cd /opt/matcha-cloud
 # Build server image
 docker build -f server/Dockerfile -t matcha-server:latest .
 
-# Stop old container if running
+# Replace old container
 docker rm -f matcha-server 2>/dev/null || true
-
-# Run server
 docker run -d \
   --name matcha-server \
   --restart=always \
@@ -256,7 +226,7 @@ docker run -d \
   -v /run/secrets:/run/secrets:ro \
   -e HTTP_PORT=8000 \
   -e WS_PORT=8443 \
-  -e JWT_SECRET="\$JWT" \
+  -e JWT_SECRET="${JWT_SECRET}" \
   -e MATCHA_USER=${MATCHA_USER} \
   -e MATCHA_PASSWORD=${MATCHA_PASSWORD} \
   -e TLS_CERT_PATH=/run/secrets/server.crt \
@@ -289,25 +259,31 @@ create_client_vm() {
 
   wait_for_vm "$vm_name"
 
-  # Generate CLIENT_TOKEN (JWT signed with JWT_SECRET) — use Python locally
+  # Generate CLIENT_TOKEN locally (Python from venv or system)
   local client_id; client_id=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || uuidgen)
   local client_token; client_token=$(python3 -c "
-import jwt, datetime, sys
-payload = {'sub': '$client_id', 'type': 'client',
+import jwt, datetime
+payload = {
+  'sub': '${client_id}', 'type': 'client',
   'iat': datetime.datetime.now(datetime.UTC),
-  'exp': datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=720)}
-print(jwt.encode(payload, '$JWT_SECRET', algorithm='HS256'))
+  'exp': datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=720)
+}
+print(jwt.encode(payload, '${JWT_SECRET}', algorithm='HS256'))
 " 2>/dev/null || echo "GENERATE_TOKEN_MANUALLY")
 
-  # Bootstrap Docker as root
+  # Bootstrap Docker
+  info "Installing Docker on $vm_name..."
   _vm_bootstrap_docker | gcloud compute ssh "$vm_name" --zone="$ZONE" --project="$PROJECT_ID" --quiet -- sudo bash
 
-  gcloud compute ssh "$vm_name" --zone="$ZONE" --project="$PROJECT_ID" --quiet -- sudo bash <<REMOTE
+  # Upload server CA cert (public only) via SCP
+  gcloud compute scp "$CERT" "$vm_name":/tmp/server.crt --zone="$ZONE" --project="$PROJECT_ID" --quiet
+
+  gcloud compute ssh "$vm_name" --zone="$ZONE" --project="$PROJECT_ID" --quiet -- sudo bash << REMOTE
 set -e
 
-# Download server CA cert (public — not the private key)
+# Move cert to persistent dir
 mkdir -p /app/certs
-gcloud secrets versions access latest --secret=matcha-tls-cert --project=${PROJECT_ID} > /app/certs/server.crt
+mv /tmp/server.crt /app/certs/server.crt
 
 # Clone repo
 git clone --branch ${GIT_BRANCH} ${GIT_REPO} /opt/matcha-cloud 2>/dev/null || \
@@ -317,10 +293,8 @@ cd /opt/matcha-cloud
 # Build client image
 docker build -f client/Dockerfile -t matcha-client:latest .
 
-# Stop old container
+# Replace old container
 docker rm -f matcha-client 2>/dev/null || true
-
-# Run client
 docker run -d \
   --name matcha-client \
   --restart=always \
@@ -395,7 +369,7 @@ destroy() {
   for secret in matcha-tls-cert matcha-tls-key matcha-jwt-secret; do
     gcloud secrets delete "$secret" \
       --project="$PROJECT_ID" --quiet 2>/dev/null && \
-      success "Deleted secret $secret" || warn "Secret $secret not found"
+      success "Deleted secret $secret" || warn "Secret $secret not found (skipping)"
   done
 
   success "Teardown complete"
@@ -428,7 +402,7 @@ main() {
       check_prerequisites
       enable_apis
       create_firewall_rules
-      generate_and_upload_certs
+      generate_certs
 
       # Create server and capture its IP
       server_ip=$(create_server_vm)
