@@ -1,32 +1,98 @@
-version: '3.8'
-
 services:
+  # ── Server ────────────────────────────────────────────────────────────────
   server:
     build:
       context: .
-      dockerfile: Dockerfile.server
-    container_name: websocket-server
-    ports:
-      - "8765:8765"
-    networks:
-      - websocket-network
+      dockerfile: server/Dockerfile
+    container_name: matcha-server
     restart: unless-stopped
+    environment:
+      HTTP_HOST: "0.0.0.0"
+      HTTP_PORT: "8000"
+      WS_HOST: "0.0.0.0"
+      WS_PORT: "8443"
+      JWT_SECRET: "${JWT_SECRET:-matcha-cloud-dev-secret}"
+      MATCHA_USER: "${MATCHA_USER:-matcha}"
+      MATCHA_PASSWORD: "${MATCHA_PASSWORD:-m4tcha-cloud}"
+      TLS_CERT_PATH: "/run/secrets/server.crt"
+      TLS_KEY_PATH: "/run/secrets/server.key"
+      CORS_ORIGINS: "*"
+    volumes:
+      - ./shared/certs:/run/secrets:ro
+    ports:
+      - "8000:8000"
+      - "8443:8443"
+    networks:
+      - matcha-network
 
-  client:
+  # ── Client 1 ──────────────────────────────────────────────────────────────
+  client1:
     build:
       context: .
-      dockerfile: Dockerfile.client
-    container_name: websocket-client
-    stdin_open: true
-    tty: true
-    depends_on:
-      - server
-    networks:
-      - websocket-network
+      dockerfile: client/Dockerfile
+    container_name: matcha-client-1
+    restart: unless-stopped
+    depends_on: [server]
     environment:
-      - SERVER_URL=ws://server:8765
-    command: python client_simple.py ws://server:8765
+      SERVER_URI: "${SERVER_URI:-wss://server:8443}"
+      CLIENT_TOKEN: "${CLIENT_TOKEN}"
+      HTTP_PORT: "8001"
+      CLIENT_ID_FILE: "/app/data/client_id.txt"
+      TLS_CA_CERT_PATH: ""
+    volumes:
+      - client1_data:/app/data
+    ports:
+      - "8001:8001"
+    networks:
+      - matcha-network
+
+  # ── Client 2 ──────────────────────────────────────────────────────────────
+  client2:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: matcha-client-2
+    restart: unless-stopped
+    depends_on: [server]
+    environment:
+      SERVER_URI: "${SERVER_URI:-wss://server:8443}"
+      CLIENT_TOKEN: "${CLIENT_TOKEN}"
+      HTTP_PORT: "8001"
+      CLIENT_ID_FILE: "/app/data/client_id.txt"
+      TLS_CA_CERT_PATH: ""
+    volumes:
+      - client2_data:/app/data
+    ports:
+      - "8002:8001"
+    networks:
+      - matcha-network
+
+  # ── Client 3 ──────────────────────────────────────────────────────────────
+  client3:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: matcha-client-3
+    restart: unless-stopped
+    depends_on: [server]
+    environment:
+      SERVER_URI: "${SERVER_URI:-wss://server:8443}"
+      CLIENT_TOKEN: "${CLIENT_TOKEN}"
+      HTTP_PORT: "8001"
+      CLIENT_ID_FILE: "/app/data/client_id.txt"
+      TLS_CA_CERT_PATH: ""
+    volumes:
+      - client3_data:/app/data
+    ports:
+      - "8003:8001"
+    networks:
+      - matcha-network
+
+volumes:
+  client1_data:
+  client2_data:
+  client3_data:
 
 networks:
-  websocket-network:
+  matcha-network:
     driver: bridge
