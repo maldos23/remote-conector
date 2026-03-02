@@ -13,6 +13,8 @@ import uuid
 from pathlib import Path
 
 import websockets
+import websockets.exceptions
+from websockets.exceptions import InvalidStatus, WebSocketException
 from dotenv import load_dotenv
 
 from client.src.core.metrics_collector import metrics_loop
@@ -171,9 +173,9 @@ async def run_with_reconnect() -> None:
         logger.info("Connection attempt #%d to %s", attempt, SERVER_URI)
         try:
             await connect_and_run()
-        except websockets.exceptions.InvalidStatus as exc:
+        except InvalidStatus as exc:
             logger.error("Rejected by server (code %s) — retrying in %.1fs", exc.response.status_code, delay)
-        except (OSError, websockets.exceptions.WebSocketException) as exc:
+        except (OSError, WebSocketException) as exc:
             logger.warning("Connection error: %s — retrying in %.1fs", exc, delay)
         except Exception as exc:
             logger.error("Unexpected error: %s — retrying in %.1fs", exc, delay)

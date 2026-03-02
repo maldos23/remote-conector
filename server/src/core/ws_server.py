@@ -10,7 +10,9 @@ import ssl
 from datetime import datetime, timezone
 
 import websockets
+import websockets.exceptions
 from websockets import WebSocketServerProtocol
+from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
 from shared.auth import verify_client_token, create_client_token
 from shared.messages import ALERT_THRESHOLDS
@@ -164,9 +166,9 @@ async def handle_client(ws: WebSocketServerProtocol) -> None:
     try:
         async for raw in ws:
             await _handle_message(client_id, raw)
-    except websockets.exceptions.ConnectionClosedOK:
+    except ConnectionClosedOK:
         pass
-    except websockets.exceptions.ConnectionClosedError as exc:
+    except ConnectionClosedError as exc:
         logger.warning("Client %s closed with error: %s", client_id, exc)
     finally:
         await registry.unregister(client_id)
