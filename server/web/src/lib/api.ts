@@ -39,6 +39,10 @@ export const api = {
   getActivity: (id: string, limit = 100) =>
     request<{ activity: ActivityEntry[] }>('GET', `/clients/${id}/activity?limit=${limit}`),
 
+  // Provision
+  provisionClient: () =>
+    request<{ client_id: string; token: string; expires_days: number; ws_port: number }>('POST', '/clients/provision'),
+
   // Commands
   sendCommand: (clientId: string, command: string, timeout = 30) =>
     request<CommandResult>('POST', `/commands/${clientId}`, { command, timeout }),

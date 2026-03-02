@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Activity, LogOut, Wifi, WifiOff, Users, RefreshCw,
-  Terminal, FileText, CheckCircle, XCircle, Clock,
+  Terminal, FileText, CheckCircle, XCircle, Clock, UserPlus,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useDashboardSocket, type DashboardEvent } from '@/hooks/useSocket'
@@ -10,6 +10,7 @@ import { api, type Client, type Alert, type LogEntry, type ActivityEntry } from 
 import ClientCard from '@/components/ClientCard'
 import AlertBanner from '@/components/AlertBanner'
 import DetailModal, { type ModalItem } from '@/components/DetailModal'
+import AddClientModal from '@/components/AddClientModal'
 import { timeAgo, cn } from '@/lib/utils'
 
 type RichLog = LogEntry & { client_id: string; hostname?: string }
@@ -31,6 +32,7 @@ export default function Dashboard() {
   const [feedTab, setFeedTab] = useState<FeedTab>('logs')
   const loadedClientsRef = useRef<Set<string>>(new Set())
   const [modalItem, setModalItem] = useState<ModalItem | null>(null)
+  const [addClientOpen, setAddClientOpen] = useState(false)
   const clientsRef = useRef<Client[]>([])
   useEffect(() => { clientsRef.current = clients }, [clients])
   const clientHostname = useCallback((id: string) => clientsRef.current.find((c) => c.client_id === id)?.hostname, [])
@@ -152,6 +154,14 @@ export default function Dashboard() {
             </div>
             <div className="w-px h-4 bg-border" />
             <span className="text-xs text-muted-foreground hidden sm:block">{username}</span>
+            <button
+              onClick={() => setAddClientOpen(true)}
+              title="Agregar cliente"
+              className="flex items-center gap-1.5 text-xs font-medium text-matcha-600 hover:text-matcha-700 border border-matcha-200 hover:border-matcha-300 bg-matcha-500/5 hover:bg-matcha-500/10 px-2.5 py-1.5 rounded-lg transition-colors"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span className="hidden sm:block">Agregar cliente</span>
+            </button>
             <button
               onClick={() => { logout(); navigate('/login') }}
               className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -285,6 +295,7 @@ export default function Dashboard() {
       </main>
     </div>
     <DetailModal item={modalItem} onClose={() => setModalItem(null)} />
+    <AddClientModal open={addClientOpen} onClose={() => setAddClientOpen(false)} />
     </>
   )
 }
