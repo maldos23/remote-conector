@@ -110,7 +110,7 @@ export default function ClientDetail() {
         {/* Meta */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { icon: Server, label: 'IP', value: client.ip },
+            { icon: Server, label: 'IP', value: `${client.ip}:${client.http_port ?? 8000}` },
             { icon: Activity, label: 'Status', value: client.connected ? 'Connected' : 'Disconnected' },
             { icon: Clock, label: 'Connected', value: formatDate(client.connected_at) },
             { icon: Clock, label: 'Last seen', value: timeAgo(client.last_seen) },

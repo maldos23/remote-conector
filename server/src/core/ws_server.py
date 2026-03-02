@@ -35,11 +35,11 @@ def _build_ssl_context() -> ssl.SSLContext | None:
     return ctx
 
 
-async def _authenticate(ws: WebSocketServerProtocol) -> str | None:
+async def _authenticate(ws: WebSocketServerProtocol) -> dict | None:
     """
     Perform the auth handshake.
-    Client must send {"type":"auth","token":"<jwt>","client_id":"<uuid>"} within 10s.
-    Returns the client_id on success or None on failure.
+    Client must send {"type":"auth","token":"<jwt>","client_id":"<uuid>",...} within 10s.
+    Returns {client_id, hostname, http_port} on success or None on failure.
     """
     try:
         raw = await asyncio.wait_for(ws.recv(), timeout=10.0)
@@ -71,7 +71,11 @@ async def _authenticate(ws: WebSocketServerProtocol) -> str | None:
     effective_id = client_id if client_id else verified_id
 
     await ws.send(json.dumps({"type": "auth_ack", "status": "ok", "message": "Authenticated"}))
-    return effective_id
+    return {
+        "client_id": effective_id,
+        "hostname": msg.get("hostname") or f"client-{effective_id[:8]}",
+        "http_port": int(msg.get("http_port") or 8000),
+    }
 
 
 async def _check_alerts(client_id: str, metrics: dict) -> None:
@@ -142,17 +146,20 @@ async def handle_client(ws: WebSocketServerProtocol) -> None:
     logger.info("Incoming connection from %s", remote)
 
     # Auth handshake
-    client_id = await _authenticate(ws)
-    if not client_id:
+    auth = await _authenticate(ws)
+    if not auth:
         await ws.close(4001, "Unauthorized")
         return
 
+    client_id = auth["client_id"]
+    hostname = auth["hostname"]
+    http_port = auth["http_port"]
+
     # Register client
     ip = remote[0] if remote else "unknown"
-    hostname = f"client-{client_id[:8]}"
-    info = await registry.register(client_id, ws, ip, hostname)
+    info = await registry.register(client_id, ws, ip, hostname, http_port)
 
-    logger.info("Client authenticated: %s @ %s", client_id, ip)
+    logger.info("Client authenticated: %s @ %s (port %d)", client_id, ip, http_port)
 
     try:
         async for raw in ws:

@@ -25,6 +25,7 @@ class ClientInfo:
     hostname: str
     connected_at: datetime
     last_seen: datetime
+    http_port: int = 8000
     authenticated: bool = False
 
     # Rolling history
@@ -76,6 +77,7 @@ class ClientRegistry:
         ws: WebSocketServerProtocol,
         ip: str,
         hostname: str,
+        http_port: int = 8000,
     ) -> ClientInfo:
         now = datetime.now(timezone.utc)
         info = ClientInfo(
@@ -83,6 +85,7 @@ class ClientRegistry:
             ws=ws,
             ip=ip,
             hostname=hostname,
+            http_port=http_port,
             connected_at=now,
             last_seen=now,
             authenticated=True,
@@ -145,6 +148,7 @@ class ClientRegistry:
             "client_id": info.client_id,
             "ip": info.ip,
             "hostname": info.hostname,
+            "http_port": info.http_port,
             "connected": True,
             "connected_at": info.connected_at.isoformat(),
             "last_seen": info.last_seen.isoformat(),

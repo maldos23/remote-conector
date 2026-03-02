@@ -38,6 +38,7 @@ export default function ClientCard({ client, onClick }: Props) {
           <div className="flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${client.connected ? 'bg-matcha-500 animate-pulse-dot' : 'bg-muted-foreground'}`} />
             <span className="text-sm font-semibold text-foreground truncate max-w-[140px]">{client.ip}</span>
+            <span className="text-[10px] text-muted-foreground font-mono">:{client.http_port ?? 8000}</span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5 ml-4 truncate">{client.hostname}</p>
         </div>

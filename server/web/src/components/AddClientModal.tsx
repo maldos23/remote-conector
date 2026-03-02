@@ -68,10 +68,10 @@ export default function AddClientModal({ open, onClose }: Props) {
     ? `docker run -d \\
   --name matcha-client \\
   --restart=always \\
-  -p 8001:8001 \\
+  -p 8000:8000 \\
   -e SERVER_URI="wss://${serverHost}:${wssPort}" \\
   -e CLIENT_TOKEN="${data.token}" \\
-  -e HTTP_PORT=8001 \\
+  -e HTTP_PORT=8000 \\
   ghcr.io/maldos23/remote-conector/client:latest`
     : ''
 
@@ -81,11 +81,11 @@ export default function AddClientModal({ open, onClose }: Props) {
     image: ghcr.io/maldos23/remote-conector/client:latest
     restart: always
     ports:
-      - "8001:8001"
+      - "8000:8000"
     environment:
       SERVER_URI: "wss://${serverHost}:${wssPort}"
       CLIENT_TOKEN: "${data.token}"
-      HTTP_PORT: "8001"`
+      HTTP_PORT: "8000"`
     : ''
 
   const buildCmd = data
@@ -100,10 +100,10 @@ docker build -f client/Dockerfile -t matcha-client:latest .
 docker run -d \\
   --name matcha-client \\
   --restart=always \\
-  -p 8001:8001 \\
+  -p 8000:8000 \\
   -e SERVER_URI="wss://${serverHost}:${wssPort}" \\
   -e CLIENT_TOKEN="${data.token}" \\
-  -e HTTP_PORT=8001 \\
+  -e HTTP_PORT=8000 \\
   matcha-client:latest`
     : ''
 

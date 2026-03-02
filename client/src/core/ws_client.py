@@ -71,6 +71,8 @@ async def _authenticate(ws) -> bool:
         "type": "auth",
         "token": CLIENT_TOKEN,
         "client_id": client_id,
+        "hostname": socket.gethostname(),
+        "http_port": int(os.getenv("HTTP_PORT", "8000")),
     }))
 
     try:

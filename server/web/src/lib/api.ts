@@ -55,6 +55,7 @@ export interface Client {
   client_id: string
   ip: string
   hostname: string
+  http_port: number
   connected: boolean
   connected_at: string
   last_seen: string
